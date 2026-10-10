@@ -67,10 +67,28 @@ RATE_LIMIT = _get_int_env("RATE_LIMIT_PER_MIN", 50)
 
 PUBLIC_DIR = Path(__file__).resolve().parent / "public"
 STATIC_DIR = PUBLIC_DIR if PUBLIC_DIR.exists() else Path(__file__).resolve().parent / "static"
-if os.environ.get("VERCEL"):
-    DB_PATH = Path("/tmp") / "feedback.db"
-else:
-    DB_PATH = Path(__file__).resolve().parent / "feedback.db"
+
+
+def resolve_db_path(root_dir=None, environ=None, home=None) -> Path:
+    """Choose where feedback.db lives, keeping it out of cloud-synced folders."""
+    root = Path(__file__).resolve().parent if root_dir is None else Path(root_dir)
+    env = os.environ if environ is None else environ
+    override = env.get("FEEDBACK_DB_PATH", "").strip()
+    if override:
+        return Path(override).expanduser()
+    if env.get("VERCEL"):
+        return Path("/tmp") / "feedback.db"
+    # A checkout under ~/Library/CloudStorage (OneDrive, Google Drive) syncs the
+    # database on every write, so keep it on local disk instead.
+    if "CloudStorage" in root.parts:
+        base = Path.home() if home is None else Path(home)
+        return base / "Local-Infra" / "app-data" / root.name / "feedback.db"
+    return root / "feedback.db"
+
+
+# Resolved after .env loads so FEEDBACK_DB_PATH can be set there.
+DB_PATH = resolve_db_path()
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 # ==============================================================================
 # 2. LOCAL FEEDBACK DATABASE (SQLITE)
